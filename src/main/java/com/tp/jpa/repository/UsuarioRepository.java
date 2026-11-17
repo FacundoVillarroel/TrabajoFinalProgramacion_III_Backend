@@ -26,15 +26,46 @@ public class UsuarioRepository extends BaseRepository<Usuario> {
      * Retorna el usuario activo con el mail indicado.
      */
     public Optional<Usuario> buscarPorMail(String mail) {
-        // TODO: implementar
-        throw new UnsupportedOperationException("Método no implementado aún");
+        EntityManager em = emf.createEntityManager();
+
+        try {
+            // Consulta JPQL: busca un usuario activo por su mail.
+            // El parámetro nombrado evita concatenar el valor en la consulta.
+            String jpql = "SELECT u FROM Usuario u "
+                    + "WHERE u.mail = :mail AND u.eliminado = false";
+
+            TypedQuery<Usuario> consulta = em.createQuery(jpql, Usuario.class);
+            consulta.setParameter("mail", mail);
+
+            List<Usuario> usuarios = consulta.getResultList();
+
+            if (usuarios.isEmpty()) {
+                return Optional.empty();
+            }
+
+            return Optional.of(usuarios.get(0));
+        } finally {
+            em.close();
+        }
     }
 
     /**
      * Retorna los pedidos activos del usuario indicado.
      */
     public List<Pedido> buscarPedidosPorUsuario(Long idUsuario) {
-        // TODO: implementar
-        throw new UnsupportedOperationException("Método no implementado aún");
+        EntityManager em = emf.createEntityManager();
+
+        try {
+            // Consulta JPQL: parte de Usuario porque administra la relación.
+            // JOIN recorre u.pedidos y excluye los pedidos dados de baja.
+            String jpql = "SELECT p FROM Usuario u JOIN u.pedidos p "
+                    + "WHERE u.id = :uid AND p.eliminado = false";
+
+            return em.createQuery(jpql, Pedido.class)
+                    .setParameter("uid", idUsuario)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
     }
 }

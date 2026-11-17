@@ -139,10 +139,29 @@ public class Main {
     }
 
     private static void menuReportes() {
-        // TODO: Implementar submenú de Reportes.
+        // TODO: Completar los reportes de pedidos.
         // Opciones: 1-Productos por categoría  2-Pedidos por usuario
         //           3-Pedidos por estado  4-Total facturado  0-Volver
-        System.out.println("[Reportes] → TODO: implementar");
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println();
+            System.out.println("===== REPORTES =====");
+            System.out.println("1. Productos por categoría");
+            System.out.println("0. Volver");
+
+            try {
+                String op = leerTexto("Opción: ");
+
+                switch (op) {
+                    case "1": reporteProductosPorCategoria(); break;
+                    case "0": salir = true; break;
+                    default: System.out.println("Opción inválida.");
+                }
+            } catch (RuntimeException e) {
+                mostrarError(e);
+            }
+        }
     }
 
     // ── Categorías ───────────────────────────────────────────────
@@ -382,6 +401,28 @@ public class Main {
                 producto.getPrecio(),
                 producto.getStock()
         );
+    }
+
+    // ── Reportes ─────────────────────────────────────────────────
+
+    private static void reporteProductosPorCategoria() {
+        if (listarCategorias().isEmpty()) {
+            return;
+        }
+
+        Categoria categoria = buscarCategoriaActiva(leerId("ID de la categoría: "));
+        List<Producto> productos = categoriaRepo.buscarProductosPorCategoria(categoria.getId());
+
+        System.out.println("\n--- Productos de " + categoria.getNombre() + " ---");
+
+        if (productos.isEmpty()) {
+            System.out.println("Esta categoría no tiene productos activos.");
+            return;
+        }
+
+        for (Producto producto : productos) {
+            mostrarProducto(producto);
+        }
     }
 
     // ── Métodos auxiliares ───────────────────────────────────────
