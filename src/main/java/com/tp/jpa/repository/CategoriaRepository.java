@@ -20,11 +20,51 @@ public class CategoriaRepository extends BaseRepository<Categoria> {
         super(Categoria.class);
     }
 
-    /**
-     * Retorna los productos activos que pertenecen a la categoría indicada.
-     */
     public List<Producto> buscarProductosPorCategoria(Long categoriaId) {
-        // TODO: implementar
-        throw new UnsupportedOperationException("Método no implementado aún");
+        EntityManager em = emf.createEntityManager();
+
+        try {
+            // Categoria es la dueña de la relación unidireccional.
+            // JOIN recorre sus productos y filtra los activos mediante :catId.
+            String jpql = "SELECT p FROM Categoria c JOIN c.productos p "
+                    + "WHERE c.id = :catId AND p.eliminado = false";
+
+            return em.createQuery(jpql, Producto.class)
+                    .setParameter("catId", categoriaId)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    public Producto agregarProducto(Long categoriaId, Producto producto) {
+        EntityManager em = emf.createEntityManager();
+
+        try {
+            em.getTransaction().begin();
+
+            Categoria categoria = em.find(Categoria.class, categoriaId);
+
+            if (categoria == null || categoria.isEliminado()) {
+                throw new IllegalArgumentException(
+                        "La categoría no existe o está dada de baja."
+                );
+            }
+
+            // La categoría está gestionada por este EntityManager.
+            // El cascade persiste el producto y la colección administra categoria_id.
+            categoria.addProducto(producto);
+
+            em.getTransaction().commit();
+            return producto;
+        } catch (RuntimeException e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+
+            throw e;
+        } finally {
+            em.close();
+        }
     }
 }

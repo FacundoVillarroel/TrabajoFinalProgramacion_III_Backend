@@ -100,7 +100,7 @@ public abstract class BaseRepository<T extends Base> {
         EntityTransaction tx = em.getTransaction();
         try {
             T entity = em.find(entityClass, id);
-            if (entity == null) {
+            if (entity == null || entity.isEliminado()) {
                 return false;
             }
             tx.begin();
