@@ -96,9 +96,33 @@ public class Main {
     }
 
     private static void menuProductos() {
-        // TODO: Implementar submenú de Productos.
         // Opciones: 1-Alta  2-Modificar  3-Baja lógica  4-Listado  0-Volver
-        System.out.println("[Productos] → TODO: implementar");
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println();
+            System.out.println("===== PRODUCTOS =====");
+            System.out.println("1. Alta");
+            System.out.println("2. Modificar");
+            System.out.println("3. Baja lógica");
+            System.out.println("4. Listado");
+            System.out.println("0. Volver");
+
+            try {
+                String op = leerTexto("Opción: ");
+
+                switch (op) {
+                    case "1": altaProducto(); break;
+                    case "2": modificarProducto(); break;
+                    case "3": bajaProducto(); break;
+                    case "4": listarProductosPorCategoria(); break;
+                    case "0": salir = true; break;
+                    default: System.out.println("Opción inválida.");
+                }
+            } catch (RuntimeException e) {
+                mostrarError(e);
+            }
+        }
     }
 
     private static void menuUsuarios() {
@@ -217,6 +241,149 @@ public class Main {
         return categoria;
     }
 
+    // ── Productos ────────────────────────────────────────────────
+
+    private static void altaProducto() {
+        if (listarCategorias().isEmpty()) {
+            System.out.println("Para crear un producto, primero debe crear una categoría.");
+            return;
+        }
+
+        Categoria categoria = buscarCategoriaActiva(leerId("ID de la categoría: "));
+
+        String nombre = leerNombre("Nombre: ");
+        String descripcion = leerTexto("Descripción: ");
+        double precio = validarPrecio(leerTexto("Precio: "));
+        int stock = validarStock(leerTexto("Stock: "));
+        String imagen = leerTexto("Imagen (opcional): ");
+        boolean disponible = leerDisponible();
+
+        Producto producto = Producto.builder()
+                .nombre(nombre)
+                .descripcion(descripcion)
+                .precio(precio)
+                .stock(stock)
+                .imagen(imagen)
+                .disponible(disponible)
+                .build();
+
+        // El repositorio persiste el producto y su asociación en una transacción.
+        Producto guardado = categoriaRepo.agregarProducto(categoria.getId(), producto);
+
+        System.out.println("Producto creado. ID: " + guardado.getId()
+                + " | Categoría: " + categoria.getNombre());
+    }
+
+    private static void modificarProducto() {
+        List<Producto> productos = productoRepo.listarActivos();
+
+        if (productos.isEmpty()) {
+            System.out.println("No hay productos activos.");
+            return;
+        }
+
+        System.out.println("\n--- Productos activos ---");
+
+        for (Producto producto : productos) {
+            mostrarProducto(producto);
+        }
+
+        Producto producto = buscarProductoActivo(leerId("ID del producto: "));
+
+        System.out.println("\nValores actuales:");
+        mostrarProducto(producto);
+
+        String nombre = leerTexto("Nuevo nombre (Enter conserva el actual): ");
+        String precio = leerTexto("Nuevo precio (Enter conserva el actual): ");
+        String stock = leerTexto("Nuevo stock (Enter conserva el actual): ");
+
+        // Valida todos los valores antes de modificar la entidad.
+        double nuevoPrecio = precio.isEmpty() ? producto.getPrecio() : validarPrecio(precio);
+        int nuevoStock = stock.isEmpty() ? producto.getStock() : validarStock(stock);
+
+        if (!nombre.isEmpty()) {
+            producto.setNombre(nombre);
+        }
+
+        producto.setPrecio(nuevoPrecio);
+        producto.setStock(nuevoStock);
+
+        Producto guardado = productoRepo.guardar(producto);
+        System.out.println("Producto modificado: " + guardado.getNombre());
+    }
+
+    private static void bajaProducto() {
+        List<Producto> productos = productoRepo.listarActivos();
+
+        if (productos.isEmpty()) {
+            System.out.println("No hay productos activos.");
+            return;
+        }
+
+        System.out.println("\n--- Productos activos ---");
+
+        for (Producto producto : productos) {
+            mostrarProducto(producto);
+        }
+
+        Long id = leerId("ID del producto: ");
+        Producto producto = buscarProductoActivo(id);
+
+        if (productoRepo.eliminarLogico(id)) {
+            System.out.println("Producto dado de baja: " + producto.getNombre());
+        } else {
+            System.out.println("El producto no existe o ya está dado de baja.");
+        }
+    }
+
+    private static void listarProductosPorCategoria() {
+        List<Categoria> categorias = categoriaRepo.listarActivos();
+        boolean hayProductos = false;
+
+        // Consulta desde Categoria porque Producto no conoce su categoría.
+        for (Categoria categoria : categorias) {
+            List<Producto> productos = categoriaRepo.buscarProductosPorCategoria(categoria.getId());
+
+            for (Producto producto : productos) {
+                System.out.printf(
+                        "ID: %d | Nombre: %s | Precio: %.2f | Stock: %d | Disponible: %s | Categoría: %s%n",
+                        producto.getId(),
+                        producto.getNombre(),
+                        producto.getPrecio(),
+                        producto.getStock(),
+                        Boolean.TRUE.equals(producto.getDisponible()) ? "Sí" : "No",
+                        categoria.getNombre()
+                );
+
+                hayProductos = true;
+            }
+        }
+
+        if (!hayProductos) {
+            System.out.println("No hay productos activos en las categorías activas.");
+        }
+    }
+
+    private static Producto buscarProductoActivo(Long id) {
+        Producto producto = productoRepo.buscarPorId(id).orElse(null);
+
+        if (producto == null || producto.isEliminado()) {
+            throw new IllegalArgumentException("El producto no existe o está dado de baja.");
+        }
+
+        return producto;
+    }
+
+    private static void mostrarProducto(Producto producto) {
+        System.out.printf(
+                "ID: %d | Nombre: %s | Precio: %.2f | Stock: %d%n",
+                producto.getId(),
+                producto.getNombre(),
+                producto.getPrecio(),
+                producto.getStock()
+        );
+    }
+
     // ── Métodos auxiliares ───────────────────────────────────────
 
     private static String leerTexto(String mensaje) {
@@ -246,6 +413,49 @@ public class Main {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("El ID debe ser un número entero válido.");
         }
+    }
+
+    private static double validarPrecio(String texto) {
+        try {
+            // Acepta punto o coma como separador decimal.
+            double precio = Double.parseDouble(texto.replace(',', '.'));
+
+            if (!Double.isFinite(precio) || precio <= 0) {
+                throw new IllegalArgumentException("El precio debe ser un número mayor a cero.");
+            }
+
+            return precio;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El precio debe ser numérico.");
+        }
+    }
+
+    private static int validarStock(String texto) {
+        try {
+            int stock = Integer.parseInt(texto);
+
+            if (stock < 0) {
+                throw new IllegalArgumentException("El stock no puede ser negativo.");
+            }
+
+            return stock;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El stock debe ser un número entero válido.");
+        }
+    }
+
+    private static boolean leerDisponible() {
+        String respuesta = leerTexto("Disponible (S/N, Enter = S): ");
+
+        if (respuesta.isEmpty() || respuesta.equalsIgnoreCase("S")) {
+            return true;
+        }
+
+        if (respuesta.equalsIgnoreCase("N")) {
+            return false;
+        }
+
+        throw new IllegalArgumentException("La disponibilidad debe ser S o N.");
     }
 
     private static String textoOpcional(String texto) {
