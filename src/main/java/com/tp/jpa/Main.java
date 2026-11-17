@@ -34,6 +34,7 @@ public class Main {
 
     public static void main(String[] args) {
         boolean salir = false;
+
         while (!salir) {
             System.out.println();
             System.out.println("===== FOOD STORE - MENÚ PRINCIPAL =====");
@@ -44,7 +45,9 @@ public class Main {
             System.out.println("5. Reportes");
             System.out.println("0. Salir");
             System.out.print("Opción: ");
+
             String op = sc.nextLine().trim();
+
             switch (op) {
                 case "1": menuCategorias(); break;
                 case "2": menuProductos(); break;
@@ -55,6 +58,7 @@ public class Main {
                 default: System.out.println("Opción inválida.");
             }
         }
+
         JPAUtil.close();
         System.out.println("Aplicación finalizada.");
     }
@@ -62,9 +66,33 @@ public class Main {
     // ── Submenús ─────────────────────────────────────────────────
 
     private static void menuCategorias() {
-        // TODO: Implementar submenú de Categorías.
         // Opciones: 1-Alta  2-Modificar  3-Baja lógica  4-Listado  0-Volver
-        System.out.println("[Categorías] → TODO: implementar");
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println();
+            System.out.println("===== CATEGORÍAS =====");
+            System.out.println("1. Alta");
+            System.out.println("2. Modificar");
+            System.out.println("3. Baja lógica");
+            System.out.println("4. Listado");
+            System.out.println("0. Volver");
+
+            try {
+                String op = leerTexto("Opción: ");
+
+                switch (op) {
+                    case "1": altaCategoria(); break;
+                    case "2": modificarCategoria(); break;
+                    case "3": bajaCategoria(); break;
+                    case "4": listarCategorias(); break;
+                    case "0": salir = true; break;
+                    default: System.out.println("Opción inválida.");
+                }
+            } catch (RuntimeException e) {
+                mostrarError(e);
+            }
+        }
     }
 
     private static void menuProductos() {
@@ -93,4 +121,143 @@ public class Main {
         System.out.println("[Reportes] → TODO: implementar");
     }
 
+    // ── Categorías ───────────────────────────────────────────────
+
+    private static void altaCategoria() {
+        String nombre = leerNombre("Nombre: ");
+        String descripcion = leerTexto("Descripción (opcional): ");
+
+        Categoria categoria = Categoria.builder()
+                .nombre(nombre)
+                .descripcion(descripcion)
+                .build();
+
+        Categoria guardada = categoriaRepo.guardar(categoria);
+        System.out.println("Categoría creada. ID: " + guardada.getId());
+    }
+
+    private static void modificarCategoria() {
+        if (listarCategorias().isEmpty()) {
+            return;
+        }
+
+        Categoria categoria = buscarCategoriaActiva(leerId("ID de la categoría: "));
+
+        System.out.println("Nombre actual: " + categoria.getNombre());
+        System.out.println("Descripción actual: " + textoOpcional(categoria.getDescripcion()));
+
+        String nombre = leerTexto("Nuevo nombre (Enter conserva el actual): ");
+        String descripcion = leerTexto("Nueva descripción (Enter conserva la actual): ");
+
+        if (!nombre.isEmpty()) {
+            categoria.setNombre(nombre);
+        }
+
+        if (!descripcion.isEmpty()) {
+            categoria.setDescripcion(descripcion);
+        }
+
+        Categoria guardada = categoriaRepo.guardar(categoria);
+        System.out.println("Categoría modificada: " + guardada.getNombre());
+    }
+
+    private static void bajaCategoria() {
+        if (listarCategorias().isEmpty()) {
+            return;
+        }
+
+        Long id = leerId("ID de la categoría: ");
+        Categoria categoria = buscarCategoriaActiva(id);
+
+        // Consulta los productos activos antes de permitir la baja de su categoría.
+        int cantidad = categoriaRepo.buscarProductosPorCategoria(id).size();
+
+        if (cantidad > 0) {
+            System.out.println("No se puede dar de baja: tiene " + cantidad + " producto(s) activo(s).");
+            System.out.println("Primero deben darse de baja esos productos.");
+            return;
+        }
+
+        if (categoriaRepo.eliminarLogico(id)) {
+            System.out.println("Categoría dada de baja: " + categoria.getNombre());
+        } else {
+            System.out.println("La categoría no existe o ya está dada de baja.");
+        }
+    }
+
+    private static List<Categoria> listarCategorias() {
+        List<Categoria> categorias = categoriaRepo.listarActivos();
+
+        if (categorias.isEmpty()) {
+            System.out.println("No hay categorías activas.");
+            return categorias;
+        }
+
+        System.out.println("\n--- Categorías activas ---");
+
+        for (Categoria categoria : categorias) {
+            System.out.printf(
+                    "ID: %d | Nombre: %s | Descripción: %s%n",
+                    categoria.getId(),
+                    categoria.getNombre(),
+                    textoOpcional(categoria.getDescripcion())
+            );
+        }
+
+        return categorias;
+    }
+
+    private static Categoria buscarCategoriaActiva(Long id) {
+        Categoria categoria = categoriaRepo.buscarPorId(id).orElse(null);
+
+        if (categoria == null || categoria.isEliminado()) {
+            throw new IllegalArgumentException("La categoría no existe o está dada de baja.");
+        }
+
+        return categoria;
+    }
+
+    // ── Métodos auxiliares ───────────────────────────────────────
+
+    private static String leerTexto(String mensaje) {
+        System.out.print(mensaje);
+        return sc.nextLine().trim();
+    }
+
+    private static String leerNombre(String mensaje) {
+        String nombre = leerTexto(mensaje);
+
+        if (nombre.isEmpty()) {
+            throw new IllegalArgumentException("El nombre es obligatorio.");
+        }
+
+        return nombre;
+    }
+
+    private static Long leerId(String mensaje) {
+        try {
+            long id = Long.parseLong(leerTexto(mensaje));
+
+            if (id <= 0) {
+                throw new IllegalArgumentException("El ID debe ser un entero mayor a cero.");
+            }
+
+            return id;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El ID debe ser un número entero válido.");
+        }
+    }
+
+    private static String textoOpcional(String texto) {
+        return texto == null || texto.isBlank() ? "(sin descripción)" : texto;
+    }
+
+    private static void mostrarError(RuntimeException e) {
+        if (e instanceof IllegalArgumentException) {
+            System.out.println("Error: " + e.getMessage());
+        } else {
+            System.out.println("No se pudo completar la operación. Revise la conexión y los datos.");
+            e.printStackTrace();
+        }
+    }
 }
