@@ -126,9 +126,35 @@ public class Main {
     }
 
     private static void menuUsuarios() {
-        // TODO: Implementar submenú de Usuarios.
         // Opciones: 1-Alta  2-Modificar  3-Baja lógica  4-Listado  5-Buscar por mail  0-Volver
-        System.out.println("[Usuarios] → TODO: implementar");
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println();
+            System.out.println("===== USUARIOS =====");
+            System.out.println("1. Alta");
+            System.out.println("2. Modificar");
+            System.out.println("3. Baja lógica");
+            System.out.println("4. Listado");
+            System.out.println("5. Buscar por mail");
+            System.out.println("0. Volver");
+
+            try {
+                String op = leerTexto("Opción: ");
+
+                switch (op) {
+                    case "1": altaUsuario(); break;
+                    case "2": modificarUsuario(); break;
+                    case "3": bajaUsuario(); break;
+                    case "4": listarUsuarios(); break;
+                    case "5": buscarUsuarioPorMail(); break;
+                    case "0": salir = true; break;
+                    default: System.out.println("Opción inválida.");
+                }
+            } catch (RuntimeException e) {
+                mostrarError(e);
+            }
+        }
     }
 
     private static void menuPedidos() {
@@ -139,7 +165,6 @@ public class Main {
     }
 
     private static void menuReportes() {
-        // TODO: Completar los reportes de pedidos.
         // Opciones: 1-Productos por categoría  2-Pedidos por usuario
         //           3-Pedidos por estado  4-Total facturado  0-Volver
         boolean salir = false;
@@ -403,6 +428,165 @@ public class Main {
         );
     }
 
+    // ── Usuarios ─────────────────────────────────────────────────
+
+    private static void altaUsuario() {
+        String nombre = leerNombre("Nombre: ");
+        String apellido = leerTexto("Apellido: ");
+        String mail = leerTexto("Mail: ");
+
+        if (usuarioRepo.buscarPorMail(mail).isPresent()) {
+            System.out.println("Ya existe un usuario activo con ese mail.");
+            return;
+        }
+
+        String celular = leerTexto("Celular (opcional): ");
+        String contrasena = leerTexto("Contraseña: ");
+        Rol rol = leerRol();
+
+        Usuario usuario = Usuario.builder()
+                .nombre(nombre)
+                .apellido(apellido)
+                .mail(mail)
+                .celular(celular)
+                .contrasena(contrasena)
+                .rol(rol)
+                .build();
+
+        Usuario guardado = usuarioRepo.guardar(usuario);
+        System.out.println("Usuario creado. ID: " + guardado.getId());
+    }
+
+    private static void modificarUsuario() {
+        if (listarUsuarios().isEmpty()) {
+            return;
+        }
+
+        Usuario usuario = buscarUsuarioActivo(leerId("ID del usuario: "));
+
+        System.out.println("\nValores actuales:");
+        mostrarDatosUsuario(usuario);
+        System.out.println("Contraseña actual: [oculta]");
+
+        String nombre = leerTexto("Nuevo nombre (Enter conserva el actual): ");
+        String apellido = leerTexto("Nuevo apellido (Enter conserva el actual): ");
+        String mail = leerTexto("Nuevo mail (Enter conserva el actual): ");
+        String celular = leerTexto("Nuevo celular (Enter conserva el actual): ");
+        String contrasena = leerTexto("Nueva contraseña (Enter conserva la actual): ");
+
+        // Comprueba el mail antes de aplicar los cambios a la entidad.
+        if (!mail.isEmpty()) {
+            Optional<Usuario> existente = usuarioRepo.buscarPorMail(mail);
+
+            if (existente.isPresent() && !existente.get().getId().equals(usuario.getId())) {
+                System.out.println("Otro usuario activo ya tiene ese mail.");
+                return;
+            }
+        }
+
+        if (!nombre.isEmpty()) {
+            usuario.setNombre(nombre);
+        }
+
+        if (!apellido.isEmpty()) {
+            usuario.setApellido(apellido);
+        }
+
+        if (!mail.isEmpty()) {
+            usuario.setMail(mail);
+        }
+
+        if (!celular.isEmpty()) {
+            usuario.setCelular(celular);
+        }
+
+        if (!contrasena.isEmpty()) {
+            usuario.setContrasena(contrasena);
+        }
+
+        Usuario guardado = usuarioRepo.guardar(usuario);
+
+        System.out.println("Usuario modificado: "
+                + guardado.getNombre() + " " + guardado.getApellido());
+    }
+
+    private static void bajaUsuario() {
+        Long id = leerId("ID del usuario: ");
+        Usuario usuario = buscarUsuarioActivo(id);
+
+        // La baja modifica únicamente el campo eliminado del usuario.
+        if (usuarioRepo.eliminarLogico(id)) {
+            System.out.println("Usuario dado de baja: "
+                    + usuario.getNombre() + " " + usuario.getApellido());
+        } else {
+            System.out.println("El usuario no existe o ya está dado de baja.");
+        }
+    }
+
+    private static List<Usuario> listarUsuarios() {
+        List<Usuario> usuarios = usuarioRepo.listarActivos();
+
+        if (usuarios.isEmpty()) {
+            System.out.println("No hay usuarios activos.");
+            return usuarios;
+        }
+
+        System.out.println("\n--- Usuarios activos ---");
+
+        for (Usuario usuario : usuarios) {
+            System.out.printf(
+                    "ID: %d | Nombre: %s %s | Mail: %s | Rol: %s%n",
+                    usuario.getId(),
+                    usuario.getNombre(),
+                    usuario.getApellido(),
+                    usuario.getMail(),
+                    usuario.getRol()
+            );
+        }
+
+        return usuarios;
+    }
+
+    private static void buscarUsuarioPorMail() {
+        String mail = leerTexto("Mail: ");
+        Optional<Usuario> usuario = usuarioRepo.buscarPorMail(mail);
+
+        if (usuario.isEmpty()) {
+            System.out.println("No existe un usuario activo con ese mail.");
+            return;
+        }
+
+        mostrarDatosUsuario(usuario.get());
+    }
+
+    private static Usuario buscarUsuarioActivo(Long id) {
+        Usuario usuario = usuarioRepo.buscarPorId(id).orElse(null);
+
+        if (usuario == null || usuario.isEliminado()) {
+            throw new IllegalArgumentException("El usuario no existe o está dado de baja.");
+        }
+
+        return usuario;
+    }
+
+    private static void mostrarDatosUsuario(Usuario usuario) {
+        // Muestra campos explícitos para excluir la contraseña.
+        System.out.println("ID: " + usuario.getId());
+        System.out.println("Nombre: " + usuario.getNombre());
+        System.out.println("Apellido: " + usuario.getApellido());
+        System.out.println("Mail: " + usuario.getMail());
+
+        if (usuario.getCelular() == null || usuario.getCelular().isBlank()) {
+            System.out.println("Celular: (sin informar)");
+        } else {
+            System.out.println("Celular: " + usuario.getCelular());
+        }
+
+        System.out.println("Rol: " + usuario.getRol());
+        System.out.println("Fecha de creación: " + usuario.getCreatedAt());
+        System.out.println("Eliminado: " + usuario.isEliminado());
+    }
+
     // ── Reportes ─────────────────────────────────────────────────
 
     private static void reporteProductosPorCategoria() {
@@ -497,6 +681,20 @@ public class Main {
         }
 
         throw new IllegalArgumentException("La disponibilidad debe ser S o N.");
+    }
+
+    private static Rol leerRol() {
+        System.out.println("Rol:");
+        System.out.println("1. ADMIN");
+        System.out.println("2. USUARIO");
+
+        String opcion = leerTexto("Opción: ");
+
+        switch (opcion) {
+            case "1": return Rol.ADMIN;
+            case "2": return Rol.USUARIO;
+            default: throw new IllegalArgumentException("El rol seleccionado es inválido.");
+        }
     }
 
     private static String textoOpcional(String texto) {
