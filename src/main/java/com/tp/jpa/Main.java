@@ -177,6 +177,11 @@ public class Main {
             System.out.println();
             System.out.println("===== PEDIDOS =====");
             System.out.println("1. Alta de pedido");
+            System.out.println("2. Cambiar estado");
+            System.out.println("3. Baja lógica");
+            System.out.println("4. Listado");
+            System.out.println("5. Pedidos por usuario");
+            System.out.println("6. Pedidos por estado");
             System.out.println("0. Volver");
 
             try {
@@ -184,6 +189,11 @@ public class Main {
 
                 switch (op) {
                     case "1": altaPedido(); break;
+                    case "2": cambiarEstadoPedido(); break;
+                    case "3": bajaPedido(); break;
+                    case "4": listarPedidos(); break;
+                    case "5": pedidosPorUsuario(); break;
+                    case "6": pedidosPorEstado(); break;
                     case "0": salir = true; break;
                     default: System.out.println("Opción inválida.");
                 }
@@ -202,6 +212,9 @@ public class Main {
             System.out.println();
             System.out.println("===== REPORTES =====");
             System.out.println("1. Productos por categoría");
+            System.out.println("2. Pedidos por usuario");
+            System.out.println("3. Pedidos por estado");
+            System.out.println("4. Total facturado");
             System.out.println("0. Volver");
 
             try {
@@ -209,6 +222,9 @@ public class Main {
 
                 switch (op) {
                     case "1": reporteProductosPorCategoria(); break;
+                    case "2": pedidosPorUsuario(); break;
+                    case "3": pedidosPorEstado(); break;
+                    case "4": totalFacturado(); break;
                     case "0": salir = true; break;
                     default: System.out.println("Opción inválida.");
                 }
@@ -786,6 +802,73 @@ public class Main {
         }
     }
 
+    private static void cambiarEstadoPedido() {
+        Pedido pedido = buscarPedidoActivo(leerId("ID del pedido: "));
+
+        System.out.println("Estado actual: " + pedido.getEstado());
+        EstadoPedido nuevoEstado = leerEstadoPedido();
+
+        pedido.setEstado(nuevoEstado);
+        Pedido guardado = pedidoRepo.guardar(pedido);
+
+        System.out.println("Pedido " + guardado.getId()
+                + " actualizado a " + guardado.getEstado() + ".");
+    }
+
+    private static void bajaPedido() {
+        Long id = leerId("ID del pedido: ");
+        Pedido pedido = buscarPedidoActivo(id);
+
+        // La baja lógica conserva los detalles y el stock que quedó tras la compra.
+        if (pedidoRepo.eliminarLogico(id)) {
+            System.out.printf(
+                    Locale.US,
+                    "Pedido dado de baja. ID: %d | Total: $%.2f%n",
+                    pedido.getId(),
+                    pedido.getTotal()
+            );
+        } else {
+            System.out.println("El pedido no existe o ya está dado de baja.");
+        }
+    }
+
+    private static void listarPedidos() {
+        List<Pedido> pedidos = pedidoRepo.listarActivos();
+
+        if (pedidos.isEmpty()) {
+            System.out.println("No hay pedidos activos.");
+            return;
+        }
+
+        System.out.println("\n--- Pedidos activos ---");
+
+        for (Pedido pedido : pedidos) {
+            mostrarPedido(pedido);
+        }
+    }
+
+    private static Pedido buscarPedidoActivo(Long id) {
+        Pedido pedido = pedidoRepo.buscarPorId(id).orElse(null);
+
+        if (pedido == null || pedido.isEliminado()) {
+            throw new IllegalArgumentException("El pedido no existe o está dado de baja.");
+        }
+
+        return pedido;
+    }
+
+    private static void mostrarPedido(Pedido pedido) {
+        System.out.printf(
+                Locale.US,
+                "ID: %d | Fecha: %s | Estado: %s | Forma de pago: %s | Total: $%.2f%n",
+                pedido.getId(),
+                pedido.getFecha(),
+                pedido.getEstado(),
+                pedido.getFormaPago(),
+                pedido.getTotal()
+        );
+    }
+
     // ── Reportes ─────────────────────────────────────────────────
 
     private static void reporteProductosPorCategoria() {
@@ -806,6 +889,57 @@ public class Main {
         for (Producto producto : productos) {
             mostrarProducto(producto);
         }
+    }
+
+    private static void pedidosPorUsuario() {
+        if (listarUsuarios().isEmpty()) {
+            return;
+        }
+
+        Usuario usuario = buscarUsuarioActivo(leerId("ID del usuario: "));
+        List<Pedido> pedidos = usuarioRepo.buscarPedidosPorUsuario(usuario.getId());
+
+        System.out.println("\n--- Pedidos de "
+                + usuario.getNombre() + " " + usuario.getApellido() + " ---");
+
+        if (pedidos.isEmpty()) {
+            System.out.println("El usuario no tiene pedidos activos.");
+            return;
+        }
+
+        for (Pedido pedido : pedidos) {
+            mostrarPedido(pedido);
+        }
+    }
+
+    private static void pedidosPorEstado() {
+        EstadoPedido estado = leerEstadoPedido();
+        List<Pedido> pedidos = pedidoRepo.buscarPorEstado(estado);
+
+        System.out.println("\n--- Pedidos en estado " + estado + " ---");
+
+        if (pedidos.isEmpty()) {
+            System.out.println("No hay pedidos activos con ese estado.");
+            return;
+        }
+
+        for (Pedido pedido : pedidos) {
+            mostrarPedido(pedido);
+        }
+    }
+
+    private static void totalFacturado() {
+        // La consulta incluye únicamente pedidos activos en estado TERMINADO.
+        List<Pedido> pedidos = pedidoRepo.buscarPorEstado(EstadoPedido.TERMINADO);
+        double total = 0.0;
+
+        for (Pedido pedido : pedidos) {
+            if (pedido.getTotal() != null) {
+                total += pedido.getTotal();
+            }
+        }
+
+        System.out.printf(Locale.US, "Total facturado: $%.2f%n", total);
     }
 
     // ── Métodos auxiliares ───────────────────────────────────────
@@ -939,6 +1073,24 @@ public class Main {
             }
 
             System.out.println("Ingrese S o N.");
+        }
+    }
+
+    private static EstadoPedido leerEstadoPedido() {
+        System.out.println("Estado:");
+        System.out.println("1. PENDIENTE");
+        System.out.println("2. CONFIRMADO");
+        System.out.println("3. TERMINADO");
+        System.out.println("4. CANCELADO");
+
+        String opcion = leerTexto("Opción: ");
+
+        switch (opcion) {
+            case "1": return EstadoPedido.PENDIENTE;
+            case "2": return EstadoPedido.CONFIRMADO;
+            case "3": return EstadoPedido.TERMINADO;
+            case "4": return EstadoPedido.CANCELADO;
+            default: throw new IllegalArgumentException("El estado seleccionado es inválido.");
         }
     }
 
