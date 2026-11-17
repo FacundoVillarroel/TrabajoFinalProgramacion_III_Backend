@@ -385,10 +385,24 @@ public class Main {
         String nombre = leerTexto("Nuevo nombre (Enter conserva el actual): ");
         String precio = leerTexto("Nuevo precio (Enter conserva el actual): ");
         String stock = leerTexto("Nuevo stock (Enter conserva el actual): ");
+        System.out.println("Disponibilidad actual: " + (Boolean.TRUE.equals(producto.getDisponible()) ? "Sí" : "No"));
+
+        String disponibilidad = leerTexto("Nueva disponibilidad (S/N, Enter conserva la actual): ");
 
         // Valida todos los valores antes de modificar la entidad.
         double nuevoPrecio = precio.isEmpty() ? producto.getPrecio() : validarPrecio(precio);
         int nuevoStock = stock.isEmpty() ? producto.getStock() : validarStock(stock);
+        // Valida la disponibilidad
+        Boolean nuevaDisponibilidad = producto.getDisponible();
+        if (!disponibilidad.isEmpty()) {
+            if (disponibilidad.equalsIgnoreCase("S")) {
+                nuevaDisponibilidad = true;
+            } else if (disponibilidad.equalsIgnoreCase("N")) {
+                nuevaDisponibilidad = false;
+            } else {
+                throw new IllegalArgumentException("La disponibilidad debe ser S o N.");
+            }
+        }
 
         if (!nombre.isEmpty()) {
             producto.setNombre(nombre);
@@ -396,6 +410,8 @@ public class Main {
 
         producto.setPrecio(nuevoPrecio);
         producto.setStock(nuevoStock);
+        producto.setDisponible(nuevaDisponibilidad);
+
 
         Producto guardado = productoRepo.guardar(producto);
         System.out.println("Producto modificado: " + guardado.getNombre());
