@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Scanner;
+import java.time.LocalDate;
 
 /**
  * Clase principal: menú de consola del sistema Food Store.
@@ -31,6 +32,17 @@ public class Main {
     private static final ProductoRepository productoRepo = new ProductoRepository();
     private static final UsuarioRepository usuarioRepo = new UsuarioRepository();
     private static final PedidoRepository pedidoRepo = new PedidoRepository();
+
+    // Guarda la selección temporal sin conservar entidades de otro EntityManager.
+    private static class ItemPedido {
+        private final Long idProducto;
+        private int cantidad;
+
+        private ItemPedido(Long idProducto, int cantidad) {
+            this.idProducto = idProducto;
+            this.cantidad = cantidad;
+        }
+    }
 
     public static void main(String[] args) {
         boolean salir = false;
@@ -158,10 +170,27 @@ public class Main {
     }
 
     private static void menuPedidos() {
-        // TODO: Implementar submenú de Pedidos.
-        // Opciones: 1-Alta  2-Cambiar estado  3-Baja lógica  4-Listado
-        //           5-Por usuario  6-Por estado  0-Volver
-        System.out.println("[Pedidos] → TODO: implementar");
+        // Opciones: 1-Alta  2-Cambiar estado  3-Baja lógica  4-Listado 5-Por usuario  6-Por estado  0-Volver
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println();
+            System.out.println("===== PEDIDOS =====");
+            System.out.println("1. Alta de pedido");
+            System.out.println("0. Volver");
+
+            try {
+                String op = leerTexto("Opción: ");
+
+                switch (op) {
+                    case "1": altaPedido(); break;
+                    case "0": salir = true; break;
+                    default: System.out.println("Opción inválida.");
+                }
+            } catch (RuntimeException e) {
+                mostrarError(e);
+            }
+        }
     }
 
     private static void menuReportes() {
@@ -587,6 +616,176 @@ public class Main {
         System.out.println("Eliminado: " + usuario.isEliminado());
     }
 
+    // ── Pedidos ──────────────────────────────────────────────────
+
+    private static void altaPedido() {
+        if (listarUsuarios().isEmpty()) {
+            System.out.println("Para crear un pedido, primero debe crear un usuario.");
+            return;
+        }
+
+        Long idUsuario = leerId("ID del usuario: ");
+        buscarUsuarioActivo(idUsuario);
+
+        FormaPago formaPago = leerFormaPago();
+        List<ItemPedido> items = new ArrayList<>();
+        boolean agregarOtro = true;
+
+        while (agregarOtro) {
+            List<Producto> productos = productoRepo.listarActivos();
+
+            if (productos.isEmpty()) {
+                System.out.println("No hay productos activos. Se cancela el alta.");
+                return;
+            }
+
+            System.out.println("\n--- Productos activos ---");
+
+            for (Producto producto : productos) {
+                mostrarProducto(producto);
+            }
+
+            Producto producto = buscarProductoActivo(leerId("ID del producto: "));
+
+            if (!Boolean.TRUE.equals(producto.getDisponible())) {
+                throw new IllegalArgumentException("El producto no está disponible.");
+            }
+
+            int cantidad = leerCantidad();
+            ItemPedido existente = null;
+
+            for (ItemPedido item : items) {
+                if (item.idProducto.equals(producto.getId())) {
+                    existente = item;
+                    break;
+                }
+            }
+
+            int cantidadAnterior = 0;
+
+            if (existente != null) {
+                cantidadAnterior = existente.cantidad;
+            }
+
+            // También considera las unidades seleccionadas anteriormente.
+            if (cantidad > producto.getStock() - cantidadAnterior) {
+                throw new IllegalArgumentException(
+                        "Stock disponible: " + producto.getStock()
+                                + ". Ya seleccionadas: " + cantidadAnterior + "."
+                );
+            }
+
+            // Agrupa un producto repetido para crear un único detalle por producto.
+            if (existente == null) {
+                items.add(new ItemPedido(producto.getId(), cantidad));
+            } else {
+                existente.cantidad += cantidad;
+            }
+
+            agregarOtro = leerAgregarOtroProducto();
+        }
+
+        if (items.isEmpty()) {
+            System.out.println("El pedido debe tener al menos un detalle.");
+            return;
+        }
+
+        guardarPedido(idUsuario, formaPago, items);
+    }
+
+    private static void guardarPedido(
+            Long idUsuario,
+            FormaPago formaPago,
+            List<ItemPedido> items
+    ) {
+        EntityManagerFactory emf = JPAUtil.getEntityManagerFactory();
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx = em.getTransaction();
+
+        try {
+            tx.begin();
+
+            // Recupera al usuario dentro del mismo contexto que guardará el pedido.
+            Usuario usuario = em.find(Usuario.class, idUsuario);
+
+            if (usuario == null || usuario.isEliminado()) {
+                throw new IllegalArgumentException("El usuario no existe o está dado de baja.");
+            }
+
+            Pedido pedido = Pedido.builder()
+                    .fecha(LocalDate.now())
+                    .estado(EstadoPedido.PENDIENTE)
+                    .formaPago(formaPago)
+                    .build();
+
+            for (ItemPedido item : items) {
+                Producto producto = em.find(Producto.class, item.idProducto);
+
+                // Revalida dentro de la transacción para evitar guardar datos desactualizados.
+                if (producto == null || producto.isEliminado()) {
+                    throw new IllegalArgumentException(
+                            "El producto con ID " + item.idProducto + " ya no está activo."
+                    );
+                }
+
+                if (!Boolean.TRUE.equals(producto.getDisponible())) {
+                    throw new IllegalArgumentException(
+                            "El producto " + producto.getNombre() + " ya no está disponible."
+                    );
+                }
+
+                if (item.cantidad <= 0 || item.cantidad > producto.getStock()) {
+                    throw new IllegalArgumentException(
+                            "Cantidad inválida o stock insuficiente para "
+                                    + producto.getNombre()
+                                    + ". Stock disponible: " + producto.getStock()
+                    );
+                }
+
+                pedido.addDetallePedido(item.cantidad, producto);
+
+                // El producto está gestionado. Hibernate guarda el cambio al confirmar.
+                producto.setStock(producto.getStock() - item.cantidad);
+            }
+
+            pedido.calcularTotal();
+
+            // El cascade persiste los detalles junto con el pedido.
+            em.persist(pedido);
+
+            // Usuario administra la asociación y la columna usuario_id.
+            usuario.getPedidos().add(pedido);
+
+            tx.commit();
+
+            System.out.println("\n--- Pedido creado ---");
+            System.out.println("ID: " + pedido.getId());
+            System.out.println("Fecha: " + pedido.getFecha());
+            System.out.println("Usuario: " + usuario.getNombre() + " " + usuario.getApellido());
+            System.out.println("Forma de pago: " + pedido.getFormaPago());
+
+            for (DetallePedido detalle : pedido.getDetalles()) {
+                System.out.printf(
+                        "Producto: %s | Cantidad: %d | Subtotal: $%.2f%n",
+                        detalle.getProducto().getNombre(),
+                        detalle.getCantidad(),
+                        detalle.getSubtotal()
+                );
+            }
+
+            System.out.printf(Locale.US, "Total: $%.2f%n", pedido.getTotal());
+        } catch (RuntimeException e) {
+            // Revierte pedido, detalles, asociación y stock si falla la operación.
+            if (tx.isActive()) {
+                tx.rollback();
+            }
+
+            throw e;
+        } finally {
+            em.close();
+        }
+    }
+
     // ── Reportes ─────────────────────────────────────────────────
 
     private static void reporteProductosPorCategoria() {
@@ -694,6 +893,52 @@ public class Main {
             case "1": return Rol.ADMIN;
             case "2": return Rol.USUARIO;
             default: throw new IllegalArgumentException("El rol seleccionado es inválido.");
+        }
+    }
+
+    private static FormaPago leerFormaPago() {
+        System.out.println("Forma de pago:");
+        System.out.println("1. TARJETA");
+        System.out.println("2. TRANSFERENCIA");
+        System.out.println("3. EFECTIVO");
+
+        String opcion = leerTexto("Opción: ");
+
+        switch (opcion) {
+            case "1": return FormaPago.TARJETA;
+            case "2": return FormaPago.TRANSFERENCIA;
+            case "3": return FormaPago.EFECTIVO;
+            default: throw new IllegalArgumentException("La forma de pago es inválida.");
+        }
+    }
+
+    private static int leerCantidad() {
+        try {
+            int cantidad = Integer.parseInt(leerTexto("Cantidad: "));
+
+            if (cantidad <= 0) {
+                throw new IllegalArgumentException("La cantidad debe ser mayor a cero.");
+            }
+
+            return cantidad;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("La cantidad debe ser un número entero válido.");
+        }
+    }
+
+    private static boolean leerAgregarOtroProducto() {
+        while (true) {
+            String respuesta = leerTexto("¿Agregar otro producto? (S/N): ");
+
+            if (respuesta.equalsIgnoreCase("S")) {
+                return true;
+            }
+
+            if (respuesta.equalsIgnoreCase("N")) {
+                return false;
+            }
+
+            System.out.println("Ingrese S o N.");
         }
     }
 

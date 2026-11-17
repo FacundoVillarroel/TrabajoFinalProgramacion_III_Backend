@@ -15,13 +15,18 @@ import lombok.experimental.SuperBuilder;
 @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
 public class DetallePedido extends Base {
 
+    // Distingue los detalles por el ID del producto, aunque sus nombres coincidan.
+    @EqualsAndHashCode.Include
+    private Long productoId() {
+        return producto == null ? null : producto.getId();
+    }
+
     @Column(name = "cantidad",nullable = false)
     private Integer cantidad;
 
     @Column(name = "subtotal", nullable = false)
     private Double subtotal;
 
-    @EqualsAndHashCode.Include
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "producto_id",nullable = false)
     private Producto producto;
