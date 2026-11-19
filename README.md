@@ -135,5 +135,5 @@ src/main/java/com/tp/jpa/
 
 ## Entrega
 
-- **Video demostrativo:** [link aquí]
-- **Informe PDF:** [link aquí]
+- [**Video demostrativo:** ](https://youtu.be/sl-H9z2PtGE)
+- [**Informe PDF:**](https://drive.google.com/file/d/10s5m3Plgm3EImcCVMHGMIA0u2jsy38qQ/view?usp=drive_link) 
